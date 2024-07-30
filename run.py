@@ -6,6 +6,7 @@ from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType, BalanceAllowanceParams, AssetType
 from dotenv import load_dotenv
 from py_clob_client.constants import AMOY
+from datetime import datetime
 
 from py_clob_client.order_builder.constants import BUY
 
@@ -93,9 +94,11 @@ async def parse_market(market):
     
     order_count = int((high_cent - low_cent) / step) + 1
     
-    for cent in range(low_cent, high_cent + step, step):
+    cent = low_cent
+    while cent <= high_cent:
         create_order(cent / 100.0, balance_allowance / order_count / cent, token_yes)
         create_order(cent / 100.0, balance_allowance / order_count / cent, token_no)
+        cent += step
 
 async def main():
     next_cursor = "MTA1MDA="
@@ -106,15 +109,19 @@ async def main():
             break
         next_cursor = data["next_cursor"]
     current_count = data["count"]
+    print("Finding new markets...")
     while True:
         data = await get_polymarket_markets(next_cursor)
         if data["count"] > current_count:
-            print("New market(s) found")
             for i in range(current_count, data["count"]):
                 market = data["data"][i]
                 if market.get('question', '').startswith('[Single Market]'):
                     continue
                 if not market.get('closed', True) and market.get('active', True):
+                    print("=====================")
+                    print("New market found")
+                    print(datetime.now().isoformat())
+                    print(f"accepting_order_timestamp: {market["accepting_order_timestamp"]}")
                     await parse_market(market)
             current_count = data["count"]
         if data["next_cursor"] != "LTE=":
