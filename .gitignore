@@ -1,2 +1,4 @@
 venv
 .env
+application.log
+creds.json
