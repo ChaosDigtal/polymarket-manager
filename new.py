@@ -380,12 +380,13 @@ async def initialize_markets_with_active_orders():
         if is_in_watchlist({"condition_id": open_order["market"]}) == True:
             continue
         market = client.get_market(open_order["market"])
-        await add_market({
-            "condition_id": market["condition_id"],
-            "no_asset_id": market["tokens"][1]["token_id"],
-            "min_tick_size": float(market["minimum_tick_size"]),
-            "start_iso_date": market["accepting_order_timestamp"]
-        })
+        if market["accepting_order_timestamp"]:
+            await add_market({
+                "condition_id": market["condition_id"],
+                "no_asset_id": market["tokens"][1]["token_id"],
+                "min_tick_size": float(market["minimum_tick_size"]),
+                "start_iso_date": market["accepting_order_timestamp"]
+            })
 
 def run_market_monitoring(market):
     asyncio.run(monitor_market(market))
