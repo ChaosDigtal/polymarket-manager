@@ -43,6 +43,7 @@ PORTFOLIO_PERCENT = 1 # In %
 SPREAD_LIMIT = 3 # In Cent
 WATCHLIST_LIMIT = 200
 WINDOW_SIZE = 30
+BUFFER_TIME = 300
 
 active_markets = [] # Market watch list, sorted by start_iso_date
 
@@ -296,7 +297,6 @@ async def monitor_market(market): # Monitor market
 async def monitor_active_markets():
     global free_window_size
     while True:
-        srt = time.time()
         copied_markets = active_markets.copy()
         init_size = 0
         for i in range(0, min(WINDOW_SIZE, len(copied_markets))):
@@ -313,7 +313,7 @@ async def monitor_active_markets():
                 new_thread.start()
         while free_window_size < init_size:
             pass
-        time.sleep(1)
+        time.sleep(BUFFER_TIME)
 
 async def monitor_new_markets(last_cursor): # Monitor new markets
     logger.info("Looking for new markets...")
