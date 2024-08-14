@@ -111,6 +111,38 @@ async def get_balance_allowance(): # Get available portfolio balance in USDC
         logger.error(f"Error fetching balance allowance: {e}")
     return 0
 
+async def get_portfolio_size():
+    trades = client.get_trades()
+    shares = dict()
+    for trade in trades:
+        if trade["status"] != "CONFIRMED":
+            continue
+        shares_bought = 0.0
+        if trade["maker_address"] == funder:
+            for maker_order in trade["maker_orders"]:
+                shares_bought += float(maker_order["matched_amount"])
+        else:
+            for maker_order in trade["maker_orders"]:
+                if maker_order["maker_address"] == funder:
+                    shares_bought += float(maker_order["matched_amount"])
+        if shares_bought == 0.0:
+            continue
+        if trade["market"] in shares:
+            shares[trade["market"]] += shares_bought
+        else:
+            shares[trade["market"]] = shares_bought
+            
+    total_position_size = 0.0
+    
+    for market, share in shares.items():
+        market = client.get_market(market)
+        if market["active"] == True and market["closed"] == False and market["tokens"][1]["outcome"] == "No" and market["tokens"][0]["winner"] == False and market["tokens"][1]["winner"] == False:
+            total_position_size += float(market["tokens"][1]["price"]) * share
+    
+    balance_allowance = await get_balance_allowance()   
+    total_portfolio_size = total_position_size + balance_allowance
+    return total_portfolio_size, balance_allowance
+
 async def create_order(price, size, token_id, isAsk=False): # Place limit order, isAsk: True=> Entry 2, False=> Entry 1, return True if order is placed, False otherwise
     try:
         order_args = OrderArgs(price=price,size=size,side=BUY,token_id=token_id)
@@ -232,7 +264,7 @@ def is_in_watchlist(market):
             return True
     return False
 
-async def monitor_market(market): # Monitor market
+async def monitor_market(market, portfolio_balance): # Monitor market
     global free_window_size
     if await check_resolved(market) == False:
         free_window_size += 1
@@ -240,8 +272,6 @@ async def monitor_market(market): # Monitor market
     if is_in_watchlist(market) == False:
         free_window_size += 1
         return
-    portfolio_balance = await get_balance_allowance()
-    portfolio_balance = portfolio_balance * PORTFOLIO_PERCENT / 100.0
     
     if is_in_watchlist(market) == False:
         free_window_size += 1
@@ -297,17 +327,23 @@ async def monitor_market(market): # Monitor market
 async def monitor_active_markets():
     global free_window_size
     while True:
+        portfolio_balance, cash_balance = await get_portfolio_size()
+        portfolio_balance = portfolio_balance * PORTFOLIO_PERCENT / 100.0
+        
+        if portfolio_balance > cash_balance:
+            portfolio_balance = cash_balance
+            
         copied_markets = active_markets.copy()
         init_size = 0
         for i in range(0, min(WINDOW_SIZE, len(copied_markets))):
-            new_thread = threading.Thread(target=run_market_monitoring, args=(copied_markets[i],))
+            new_thread = threading.Thread(target=run_market_monitoring, args=(copied_markets[i],portfolio_balance,))
             init_size += 1
             new_thread.start()
         free_window_size = 0
         index = init_size
         while index < len(copied_markets):
             if free_window_size > 0:
-                new_thread = threading.Thread(target=run_market_monitoring, args=(copied_markets[index],))
+                new_thread = threading.Thread(target=run_market_monitoring, args=(copied_markets[index],portfolio_balance,))
                 free_window_size -= 1
                 index += 1
                 new_thread.start()
@@ -379,17 +415,21 @@ async def initialize_markets_with_active_orders():
     for open_order in open_orders:
         if is_in_watchlist({"condition_id": open_order["market"]}) == True:
             continue
-        market = client.get_market(open_order["market"])
-        if market["accepting_order_timestamp"]:
-            await add_market({
-                "condition_id": market["condition_id"],
-                "no_asset_id": market["tokens"][1]["token_id"],
-                "min_tick_size": float(market["minimum_tick_size"]),
-                "start_iso_date": market["accepting_order_timestamp"]
-            })
+        try:
+            market = client.get_market(open_order["market"])
+            if market["accepting_order_timestamp"]:
+                await add_market({
+                    "condition_id": market["condition_id"],
+                    "no_asset_id": market["tokens"][1]["token_id"],
+                    "min_tick_size": float(market["minimum_tick_size"]),
+                    "start_iso_date": market["accepting_order_timestamp"]
+                })
+        except:
+            pass
+        time.sleep(1)
 
-def run_market_monitoring(market):
-    asyncio.run(monitor_market(market))
+def run_market_monitoring(market, portfolio_balance):
+    asyncio.run(monitor_market(market, portfolio_balance))
 
 def run_new_market_monitoring(last_cursor):
     asyncio.run(monitor_new_markets(last_cursor))
