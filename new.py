@@ -124,7 +124,7 @@ async def create_order(price, size, token_id, isAsk=False): # Place limit order,
                 logger.info("Order Successfully Canceled.")
                 return False
             else:
-                logger.info(f"Failed to Cancel Order due to {resp_cancel["not_canceled"]}")
+                logger.info(f"Failed to Cancel Order due to {resp_cancel['not_canceled']}")
                 return True
         else:
             logger.info("Order Successfully Matched.")
