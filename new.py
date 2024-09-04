@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import OrderArgs, OrderType, BalanceAllowanceParams, OpenOrderParams, AssetType, TradeParams
 from dotenv import load_dotenv
-from py_clob_client.order_builder.constants import BUY
+from py_clob_client.order_builder.constants import BUY, SELL
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -42,8 +42,9 @@ MAX_BID = 55 # In Cent
 PORTFOLIO_PERCENT = 1 # In %
 SPREAD_LIMIT = 3 # In Cent
 WATCHLIST_LIMIT = 200
-WINDOW_SIZE = 30
+WINDOW_SIZE = 25
 BUFFER_TIME = 300
+SELL_TRESHOLD = 0.95
 
 active_markets = [] # Market watch list, sorted by start_iso_date
 
@@ -56,6 +57,7 @@ creds = client.create_or_derive_api_creds()
 client.set_api_creds(creds=creds)
 
 free_window_size = 0
+free_ws_position = 0
 
 def update_env(last_cursor):
     env_file_path = ".env"
@@ -143,7 +145,7 @@ async def get_portfolio_size():
     total_portfolio_size = total_position_size + balance_allowance
     return total_portfolio_size, balance_allowance
 
-async def create_order(price, size, token_id, isAsk=False): # Place limit order, isAsk: True=> Entry 2, False=> Entry 1, return True if order is placed, False otherwise
+async def create_buy_order(price, size, token_id, isAsk=False): # Place limit order, isAsk: True=> Entry 2, False=> Entry 1, return True if order is placed, False otherwise
     try:
         order_args = OrderArgs(price=price,size=size,side=BUY,token_id=token_id)
         logger.info(f"Creating NO order: {order_args}")
@@ -164,6 +166,28 @@ async def create_order(price, size, token_id, isAsk=False): # Place limit order,
             return True
     except Exception as e:
         logger.error(f"Error creating NO order: {e}")
+        return False
+    
+async def create_sell_order(price, size, token_id):
+    try:
+        order_args = OrderArgs(price=price,size=size,side=SELL,token_id=token_id)
+        print(order_args)
+        signed_order = client.create_order(order_args)
+        resp = client.post_order(signed_order, OrderType.GTC)
+        if resp["status"] != "matched" and resp["orderID"]: # Failed to purchase immediately
+            logger.info("Order Unmatched. Canceling...")
+            resp_cancel = client.cancel(order_id=resp["orderID"]) # Cancel the order since it failed to purchase immediately
+            if len(resp_cancel["canceled"]):
+                logger.info("Order Successfully Canceled.")
+                return False
+            else:
+                logger.info(f"Failed to Cancel Order due to {resp_cancel['not_canceled']}")
+                return True
+        else:
+            logger.info("Order Successfully Matched.")
+            return True
+    except Exception as e:
+        logger.error(f"Error creating SELL order: {e}")
         return False
 
 async def cancel_orders_on_market(condition_id): # Cancel all open orders on market
@@ -312,7 +336,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     if lowest_ask >= min_bid and lowest_ask <= max_bid and spread < spread_limit: # Entry Condition 2
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = lowest_ask
-            if await create_order(limit_price, available_balance / limit_price, market["no_asset_id"], True): # Place new order
+            if await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"], True): # Place new order
                 free_window_size += 1
                 return # If order is placed, return so that Entry 1 cannot place new order to ensure $ risked is under portfolio limit
     if is_in_watchlist(market) == False:
@@ -321,7 +345,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     if highest_bid >= min_bid and highest_bid < max_bid: # Entry Conditoin 1
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = highest_bid + min_tick_size
-            await create_order(limit_price, available_balance / limit_price, market["no_asset_id"]) # Place new order
+            await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"]) # Place new order
     free_window_size += 1
 
 async def monitor_active_markets():
@@ -428,6 +452,71 @@ async def initialize_markets_with_active_orders():
             pass
         time.sleep(1)
 
+async def check_position(market, shares):
+    global free_ws_position
+    try:
+        order_book = client.get_order_book(market["tokens"][1]["token_id"])
+    except Exception as e:
+        logger.info(f"order_book API error")
+        free_ws_position += 1
+        return
+    while len(order_book.bids) > 0 and shares > 0.0:
+        bid = order_book.bids.pop()
+        bid_price = float(bid.price)
+        bid_size = float(bid.size)
+        if bid_price < SELL_TRESHOLD:
+            break
+        sell_size = min(bid_size, shares)
+        if await create_sell_order(bid_price, sell_size, market["tokens"][1]["token_id"]) == True:
+            shares -= sell_size
+    free_ws_position += 1
+
+async def monitor_positions():
+    global free_ws_position
+    while True:
+        trades = client.get_trades()
+        shares = dict()
+        for trade in trades:
+            if trade["status"] != "CONFIRMED":
+                continue
+            shares_bought = 0.0
+            if trade["maker_address"] == funder:
+                for maker_order in trade["maker_orders"]:
+                    shares_bought += float(maker_order["matched_amount"])
+            else:
+                for maker_order in trade["maker_orders"]:
+                    if maker_order["maker_address"] == funder:
+                        shares_bought += float(maker_order["matched_amount"])
+            if shares_bought == 0.0:
+                continue
+            if trade["market"] in shares:
+                shares[trade["market"]] += shares_bought
+            else:
+                shares[trade["market"]] = shares_bought
+        
+        free_ws_position = 5
+        
+        for market, share in shares.items():
+            market = client.get_market(market)
+            if market["active"] == True and market["closed"] == False and market["tokens"][1]["outcome"] == "No" and market["tokens"][0]["winner"] == False and market["tokens"][1]["winner"] == False:
+                print(market)
+                while free_ws_position == 0:
+                    pass
+                new_thread = threading.Thread(target=run_check_position, args=(market, share,))
+                free_ws_position -= 1
+                new_thread.start()
+                
+        while free_ws_position != 5:
+            pass
+        
+        time.sleep(10)
+
+def run_check_position(market, shares):
+    asyncio.run(check_position(market, shares))
+
+def run_monitor_positions():
+    asyncio.run(monitor_positions())
+
 def run_market_monitoring(market, portfolio_balance):
     asyncio.run(monitor_market(market, portfolio_balance))
 
@@ -449,6 +538,10 @@ last_cursor = last_cursor.replace("_", "=")
 start_cursor = os.getenv('START_CURSOR')
 start_cursor = start_cursor.replace("_", "=")
 
+# Monitor positions for selling
+monitor_positions_thread = threading.Thread(target=run_monitor_positions, args=())
+monitor_positions_thread.start()
+
 # Monitor markets with my active orders first
 markets_with_active_orders_thread = threading.Thread(target=run_initialize_markets_with_active_orders, args=())
 markets_with_active_orders_thread.start()
@@ -461,5 +554,6 @@ monitor_new_markets_thread.start()
 initialize_thread = threading.Thread(target=run_initialize_markets, args=(start_cursor, last_cursor,))
 initialize_thread.start()
 
+# Monitor active market watchlist
 monitor_active_markets_thread = threading.Thread(target=run_active_markets_monitoring, args=())
 monitor_active_markets_thread.start()
