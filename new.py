@@ -171,7 +171,6 @@ async def create_buy_order(price, size, token_id, isAsk=False): # Place limit or
 async def create_sell_order(price, size, token_id):
     try:
         order_args = OrderArgs(price=price,size=size,side=SELL,token_id=token_id)
-        print(order_args)
         signed_order = client.create_order(order_args)
         resp = client.post_order(signed_order, OrderType.GTC)
         if resp["status"] != "matched" and resp["orderID"]: # Failed to purchase immediately
@@ -292,7 +291,7 @@ def add_priority(market):
     for i, element in enumerate(active_markets):
         if element["condition_id"] == market["condition_id"]:
             active_markets.pop(i)
-            market["start_iso_date"] = market["start_iso_date"].replace("2024, 2050")
+            market["start_iso_date"] = market["start_iso_date"].replace("2024", "2050")
             active_markets.append(market)
             return True
     return False
@@ -512,7 +511,6 @@ async def monitor_positions():
         for market, share in shares.items():
             market = client.get_market(market)
             if market["active"] == True and market["closed"] == False and market["tokens"][1]["outcome"] == "No" and market["tokens"][0]["winner"] == False and market["tokens"][1]["winner"] == False:
-                print(market)
                 while free_ws_position == 0:
                     pass
                 new_thread = threading.Thread(target=run_check_position, args=(market, share,))
