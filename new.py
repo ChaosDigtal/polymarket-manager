@@ -288,6 +288,15 @@ def is_in_watchlist(market):
             return True
     return False
 
+def add_priority(market):
+    for i, element in enumerate(active_markets):
+        if element["condition_id"] == market["condition_id"]:
+            active_markets.pop(i)
+            market["start_iso_date"] = market["start_iso_date"].replace("2024, 2050")
+            active_markets.append(market)
+            return True
+    return False
+
 async def monitor_market(market, portfolio_balance): # Monitor market
     global free_window_size
     if await check_resolved(market) == False:
@@ -337,6 +346,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = lowest_ask
             if await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"], True): # Place new order
+                add_priority(market)
                 free_window_size += 1
                 return # If order is placed, return so that Entry 1 cannot place new order to ensure $ risked is under portfolio limit
     if is_in_watchlist(market) == False:
@@ -345,7 +355,8 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     if highest_bid >= min_bid and highest_bid < max_bid: # Entry Conditoin 1
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = highest_bid + min_tick_size
-            await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"]) # Place new order
+            if await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"]): # Place new order
+                add_priority(market)
     free_window_size += 1
 
 async def monitor_active_markets():
@@ -437,17 +448,19 @@ async def check_resolved(market):
 async def initialize_markets_with_active_orders():
     open_orders = client.get_orders()
     for open_order in open_orders:
-        if is_in_watchlist({"condition_id": open_order["market"]}) == True:
+        if add_priority(open_order["market"]):
             continue
         try:
             market = client.get_market(open_order["market"])
             if market["accepting_order_timestamp"]:
-                await add_market({
+                active_markets.append({
                     "condition_id": market["condition_id"],
                     "no_asset_id": market["tokens"][1]["token_id"],
                     "min_tick_size": float(market["minimum_tick_size"]),
-                    "start_iso_date": market["accepting_order_timestamp"]
+                    "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050")
                 })
+                while len(active_markets) > WATCHLIST_LIMIT:
+                    active_markets.pop(0)
         except:
             pass
         time.sleep(1)
