@@ -287,10 +287,10 @@ def is_in_watchlist(market):
             return True
     return False
 
-def add_priority(market):
+def add_priority(market_id):
     for i, element in enumerate(active_markets):
-        if element["condition_id"] == market["condition_id"]:
-            active_markets.pop(i)
+        if element["condition_id"] == market_id:
+            market = active_markets.pop(i)
             market["start_iso_date"] = market["start_iso_date"].replace("2024", "2050")
             active_markets.append(market)
             return True
@@ -345,7 +345,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = lowest_ask
             if await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"], True): # Place new order
-                add_priority(market)
+                add_priority(market["condition_id"])
                 free_window_size += 1
                 return # If order is placed, return so that Entry 1 cannot place new order to ensure $ risked is under portfolio limit
     if is_in_watchlist(market) == False:
@@ -355,7 +355,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
             limit_price = highest_bid + min_tick_size
             if await create_buy_order(limit_price, available_balance / limit_price, market["no_asset_id"]): # Place new order
-                add_priority(market)
+                add_priority(market["condition_id"])
     free_window_size += 1
 
 async def monitor_active_markets():
@@ -399,7 +399,7 @@ async def monitor_new_markets(last_cursor): # Monitor new markets
             if not market.get('closed', True) and market.get('active', True) and market["accepting_order_timestamp"] and market["condition_id"] not in [market["condition_id"] for market in active_markets] and current_time < end_time and market["tokens"][1]["outcome"] == "No":
                 if market["tokens"][0]["token_id"] and market["tokens"][1]["token_id"]:
                     logger.info("=====================")
-                    logger.info(f"New market found: {market["condition_id"]}")
+                    logger.info(f"New market found: {market["condition_id"] if i > 0 else key[::-1]}")
                     await add_market({
                         "condition_id": market["condition_id"],
                         "no_asset_id": market["tokens"][1]["token_id"],
@@ -485,6 +485,7 @@ async def check_position(market, shares):
 
 async def monitor_positions():
     global free_ws_position
+    add_positions = True
     while True:
         trades = client.get_trades()
         shares = dict()
@@ -511,6 +512,16 @@ async def monitor_positions():
         for market, share in shares.items():
             market = client.get_market(market)
             if market["active"] == True and market["closed"] == False and market["tokens"][1]["outcome"] == "No" and market["tokens"][0]["winner"] == False and market["tokens"][1]["winner"] == False:
+                if add_positions == True:
+                    if add_priority(market["condition_id"]) == False:
+                        active_markets.append({
+                            "condition_id": market["condition_id"],
+                            "no_asset_id": market["tokens"][1]["token_id"],
+                            "min_tick_size": float(market["minimum_tick_size"]),
+                            "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050")
+                        })
+                        while len(active_markets) > WATCHLIST_LIMIT:
+                            active_markets.pop(0)
                 while free_ws_position == 0:
                     pass
                 new_thread = threading.Thread(target=run_check_position, args=(market, share,))
@@ -520,6 +531,7 @@ async def monitor_positions():
         while free_ws_position != 5:
             pass
         
+        add_positions = False
         time.sleep(10)
 
 def run_check_position(market, shares):
