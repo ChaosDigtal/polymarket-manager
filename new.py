@@ -192,7 +192,7 @@ async def cancel_orders_on_market(condition_id): # Cancel all open orders on mar
         if len(resp_cancel["canceled"]):
             logger.info("Order Successfully Canceled.")
         else:
-            logger.info(f"Failed to Cancel Order due to {resp_cancel["not_canceled"]}")
+            logger.info(f"Failed to Cancel Order due to {resp_cancel['not_canceled']}")
             return False
     return True
 
@@ -389,7 +389,7 @@ async def monitor_new_markets(last_cursor): # Monitor new markets
             if not market.get('closed', True) and market.get('active', True) and market["accepting_order_timestamp"] and market["condition_id"] not in [market["condition_id"] for market in active_markets] and current_time < end_time and market["tokens"][1]["outcome"] == "No":
                 if market["tokens"][0]["token_id"] and market["tokens"][1]["token_id"]:
                     logger.info("=====================")
-                    logger.info(f"New market found: {market["condition_id"] if i > 0 else key[::-1]}")
+                    logger.info(f"New market found: {market['condition_id'] if i > 0 else key[::-1]}")
                     await add_market({
                         "condition_id": market["condition_id"],
                         "no_asset_id": market["tokens"][1]["token_id"],
@@ -410,7 +410,7 @@ async def check_resolved(market):
     market = client.get_market(market["condition_id"])
     if market["active"] == True and market["closed"] == False:
         return True
-    logger.info(f"Market {market["condition_id"]} resolved.")
+    logger.info(f"Market {market['condition_id']} resolved.")
     for i, element in enumerate(active_markets):
         if element["condition_id"] == market["condition_id"]:
             active_markets.pop(i)
