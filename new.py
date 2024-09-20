@@ -445,7 +445,7 @@ async def initialize_markets_with_active_orders():
                     "condition_id": market["condition_id"],
                     "no_asset_id": market["tokens"][1]["token_id"],
                     "min_tick_size": float(market["minimum_tick_size"]),
-                    "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050")
+                    "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050") if market["accepting_order_timestamp"] else "2050-01-01T00:00:00"
                 })
                 while len(active_markets) > WATCHLIST_LIMIT:
                     active_markets.pop(0)
@@ -482,7 +482,7 @@ async def monitor_positions():
                     "condition_id": market["condition_id"],
                     "no_asset_id": market["tokens"][1]["token_id"],
                     "min_tick_size": float(market["minimum_tick_size"]),
-                    "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050")
+                    "start_iso_date": market["accepting_order_timestamp"].replace("2024", "2050") if market["accepting_order_timestamp"] else "2050-01-01T00:00:00"
                 })
                 while len(active_markets) > WATCHLIST_LIMIT:
                     active_markets.pop(0)
