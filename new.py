@@ -147,7 +147,7 @@ async def get_portfolio_size():
 async def create_buy_order(price, size, token_id):
     try:
         order_args = OrderArgs(price=price,size=size,side=BUY,token_id=token_id)
-        logger.info(f"Creating NO order: {order_args}")
+        logger.info(f"Creating NO BUY order: {order_args}")
         signed_order = client.create_order(order_args)
         resp = client.post_order(signed_order, OrderType.GTC)
         logger.info(f"Order response: {resp}")
@@ -170,9 +170,10 @@ async def create_buy_order(price, size, token_id):
 async def create_sell_order(price, size, token_id):
     try:
         order_args = OrderArgs(price=price,size=size,side=SELL,token_id=token_id)
+        logger.info(f"Creating NO SELL order: {order_args}")
         signed_order = client.create_order(order_args)
         resp = client.post_order(signed_order, OrderType.GTC)
-        logger.info("Order Successfully Placed.")
+        logger.info("Sell Order Successfully Placed.")
         return True
     except Exception as e:
         logger.error(f"Error creating SELL order: {e}")
@@ -344,16 +345,6 @@ async def monitor_market(market, portfolio_balance): # Monitor market
                 await create_sell_order(SELL_TRESHOLD, size, market["no_asset_id"])
                 free_window_size += 1
                 return # If order is placed, return so that Entry 1 cannot place new order to ensure $ risked is under portfolio limit
-    if is_in_watchlist(market) == False:
-        free_window_size += 1
-        return
-    if highest_bid >= min_bid and highest_bid < max_bid: # Entry Conditoin 1
-        if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
-            limit_price = truncate_to_2_decimals(highest_bid + min_tick_size)
-            size = truncate_to_2_decimals(available_balance / limit_price)
-            if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
-                add_priority(market["condition_id"])
-                await create_sell_order(SELL_TRESHOLD, size, market["no_asset_id"])
     free_window_size += 1
 
 async def monitor_active_markets():
