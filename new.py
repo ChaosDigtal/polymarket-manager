@@ -149,11 +149,17 @@ async def create_buy_order(price, size, token_id):
         order_args = OrderArgs(price=price,size=size,side=BUY,token_id=token_id)
         logger.info(f"Creating NO order: {order_args}")
         signed_order = client.create_order(order_args)
-        resp = client.post_order(signed_order, OrderType.FOK)
+        resp = client.post_order(signed_order, OrderType.GTC)
         logger.info(f"Order response: {resp}")
-        if resp["errorMsg"] != "": # If failed to purchase immediately
-            logger.info("Order Unmatched.")
-            return False
+        if resp["status"] != "matched" and resp["orderID"]: # If failed to purchase immediately
+            logger.info("Order Unmatched. Canceling...")
+            resp_cancel = client.cancel(order_id=resp["orderID"]) # Cancel the order since it failed to purchase immediately
+            if len(resp_cancel["canceled"]):
+                logger.info("Order Successfully Canceled.")
+                return False
+            else:
+                logger.info(f"Failed to Cancel Order due to {resp_cancel['not_canceled']}")
+                return True
         else:
             logger.info("Order Successfully Matched.")
             return True
@@ -282,7 +288,7 @@ def add_priority(market_id):
     return False
 
 def truncate_to_2_decimals(value):
-    return int(value * 10) / 10.0
+    return int(value * 100) / 100.0
 
 async def monitor_market(market, portfolio_balance): # Monitor market
     global free_window_size
@@ -331,7 +337,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     
     if lowest_ask >= min_bid and lowest_ask <= max_bid and spread < spread_limit: # Entry Condition 2
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
-            limit_price = lowest_ask
+            limit_price = truncate_to_2_decimals(lowest_ask)
             size = truncate_to_2_decimals(available_balance / limit_price)
             if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
                 add_priority(market["condition_id"])
@@ -343,7 +349,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         return
     if highest_bid >= min_bid and highest_bid < max_bid: # Entry Conditoin 1
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
-            limit_price = highest_bid + min_tick_size
+            limit_price = truncate_to_2_decimals(highest_bid + min_tick_size)
             size = truncate_to_2_decimals(available_balance / limit_price)
             if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
                 add_priority(market["condition_id"])
