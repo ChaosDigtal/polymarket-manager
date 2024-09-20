@@ -324,6 +324,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         order_book = client.get_order_book(market["no_asset_id"])
     except Exception as e:
         logger.info(f"order_book API error")
+        logger.error(e)
         free_window_size += 1
         return
     
