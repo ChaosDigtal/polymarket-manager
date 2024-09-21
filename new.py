@@ -291,6 +291,10 @@ def add_priority(market_id):
 def truncate_to_2_decimals(value):
     return int(value * 100) / 100.0
 
+async def delayed_sell_order(sell_threshold, size, asset_id):
+    await asyncio.sleep(15)  # Wait for 15 seconds
+    await create_sell_order(sell_threshold, size, asset_id)
+
 async def monitor_market(market, portfolio_balance): # Monitor market
     global free_window_size
     if await check_resolved(market) == False:
@@ -352,7 +356,7 @@ async def monitor_market(market, portfolio_balance): # Monitor market
                     if addPriority == True:
                         add_priority(market["condition_id"])
                         addPriority = False
-                    await create_sell_order(SELL_TRESHOLD, size, market["no_asset_id"])
+                    asyncio.create_task(delayed_sell_order(SELL_TRESHOLD, size, market["no_asset_id"]))
                     available_balance -= limit_price * size
     free_window_size += 1
 
