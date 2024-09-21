@@ -328,8 +328,8 @@ async def monitor_market(market, portfolio_balance): # Monitor market
         free_window_size += 1
         return
     
-    highest_bid = float(order_book.bids.pop().price) if len(order_book.bids) else 100.0
-    lowest_ask = float(order_book.asks.pop().price) if len(order_book.asks) else 0.0
+    highest_bid = float(order_book.bids[-1].price) if len(order_book.bids) else 100.0
+    lowest_ask = float(order_book.asks[-1].price) if len(order_book.asks) else 0.0
     spread = lowest_ask - highest_bid
     min_tick_size = market["min_tick_size"]
     
@@ -339,13 +339,21 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     
     if lowest_ask >= min_bid and lowest_ask <= max_bid and spread < spread_limit: # Entry Condition 2
         if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
-            limit_price = truncate_to_2_decimals(lowest_ask)
-            size = truncate_to_2_decimals(available_balance / limit_price)
-            if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
-                add_priority(market["condition_id"])
-                await create_sell_order(SELL_TRESHOLD, size, market["no_asset_id"])
-                free_window_size += 1
-                return # If order is placed, return so that Entry 1 cannot place new order to ensure $ risked is under portfolio limit
+            addPriority = True
+            for element in reversed(order_book.asks):
+                limit_price = float(element.price)
+                shares = float(element.size)
+                if limit_price > max_bid or available_balance <= 0.0:
+                    break
+                size = min(available_balance / limit_price, shares)
+                size = truncate_to_2_decimals(size)
+            
+                if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
+                    if addPriority == True:
+                        add_priority(market["condition_id"])
+                        addPriority = False
+                    await create_sell_order(SELL_TRESHOLD, size, market["no_asset_id"])
+                    available_balance -= limit_price * size
     free_window_size += 1
 
 async def monitor_active_markets():
