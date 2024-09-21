@@ -342,22 +342,21 @@ async def monitor_market(market, portfolio_balance): # Monitor market
     spread_limit = SPREAD_LIMIT / 100.0
     
     if lowest_ask >= min_bid and lowest_ask <= max_bid and spread < spread_limit: # Entry Condition 2
-        if await cancel_orders_on_market(market["condition_id"]): # Cancel current open orders
-            addPriority = True
-            for element in reversed(order_book.asks):
-                limit_price = float(element.price)
-                shares = float(element.size)
-                if limit_price > max_bid or available_balance <= 0.0:
-                    break
-                size = min(available_balance / limit_price, shares)
-                size = truncate_to_2_decimals(size)
-            
-                if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
-                    if addPriority == True:
-                        add_priority(market["condition_id"])
-                        addPriority = False
-                    asyncio.create_task(delayed_sell_order(SELL_TRESHOLD, size, market["no_asset_id"]))
-                    available_balance -= limit_price * size
+        addPriority = True
+        for element in reversed(order_book.asks):
+            limit_price = float(element.price)
+            shares = float(element.size)
+            if limit_price > max_bid or available_balance <= 0.0:
+                break
+            size = min(available_balance / limit_price, shares)
+            size = truncate_to_2_decimals(size)
+        
+            if await create_buy_order(limit_price, size, market["no_asset_id"]): # Place new order
+                if addPriority == True:
+                    add_priority(market["condition_id"])
+                    addPriority = False
+                asyncio.create_task(delayed_sell_order(SELL_TRESHOLD, size, market["no_asset_id"]))
+                available_balance -= limit_price * size
     free_window_size += 1
 
 async def monitor_active_markets():
