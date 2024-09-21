@@ -291,10 +291,6 @@ def add_priority(market_id):
 def truncate_to_2_decimals(value):
     return int(value * 100) / 100.0
 
-async def delayed_sell_order(sell_threshold, size, asset_id):
-    await asyncio.sleep(15)  # Wait for 15 seconds
-    await create_sell_order(sell_threshold, size, asset_id)
-
 async def monitor_market(market, portfolio_balance): # Monitor market
     global free_window_size
     if await check_resolved(market) == False:
@@ -355,7 +351,8 @@ async def monitor_market(market, portfolio_balance): # Monitor market
                 if addPriority == True:
                     add_priority(market["condition_id"])
                     addPriority = False
-                asyncio.create_task(delayed_sell_order(SELL_TRESHOLD, size, market["no_asset_id"]))
+                timer = threading.Timer(15, run_create_sell_order, args=(SELL_TRESHOLD, size, market["no_asset_id"]))
+                timer.start()
                 available_balance -= limit_price * size
     free_window_size += 1
 
@@ -499,6 +496,9 @@ async def monitor_positions():
                 while len(active_markets) > WATCHLIST_LIMIT:
                     active_markets.pop(0)
             await create_sell_order(SELL_TRESHOLD, truncate_to_2_decimals(share), market["tokens"][1]["token_id"])
+
+def run_create_sell_order(sell_threshold, size, asset_id):
+    asyncio.run(create_sell_order(sell_threshold, size, asset_id))
 
 def run_monitor_positions():
     asyncio.run(monitor_positions())
