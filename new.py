@@ -397,7 +397,7 @@ async def monitor_new_markets(last_cursor): # Monitor new markets
             if not market.get('closed', True) and market.get('active', True) and market["accepting_order_timestamp"] and market["condition_id"] not in [market["condition_id"] for market in active_markets] and current_time < end_time and market["tokens"][1]["outcome"] == "No":
                 if market["tokens"][0]["token_id"] and market["tokens"][1]["token_id"]:
                     logger.info("=====================")
-                    logger.info(f"New market found: {market['condition_id'] if i > 0 else key[::-1]}")
+                    logger.info(f"New market found: {market['condition_id']}")
                     await add_market({
                         "condition_id": market["condition_id"],
                         "no_asset_id": market["tokens"][1]["token_id"],
